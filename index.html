@@ -3,15 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>APW – Test mobile</title>
+  <title>APW – Test mobile (auto-scan + import numérique)</title>
   <meta name="theme-color" content="#111" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <style>
     body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; color:#111; background:#fff }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
     .card { border: 1px solid #e5e5e5; border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; background:#fff }
-    .btn { display:inline-block; border-radius:10px; padding:10px 14px; border:none; background:#111; color:#fff; font-weight:600 }
+    .btn { display:inline-block; border-radius:10px; padding:10px 14px; border:none; background:#111; color:#fff; font-weight:600; cursor:pointer }
     .btn.alt { background:#eaeaea; color:#111 }
-    .row { display:flex; gap:8px; align-items:center }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap: wrap }
     input, select { padding:10px 12px; border-radius:10px; border:1px solid #ddd; width:100% }
     video { width: 100%; max-height: 40vh; background:#000; border-radius: 12px }
     .pill { font-size:12px; padding:4px 8px; border-radius:999px; background:#f3f3f3; display:inline-block }
@@ -22,6 +24,11 @@
     .bad { color: #b00020; }
     .list { display:grid; gap:8px }
     .item { border:1px dashed #ddd; border-radius:12px; padding:8px 10px }
+    .title { font-weight:600 }
+    .small { font-size:12px; color:#666 }
+    .hidden { display:none }
+    .tests-pass { color:#0a7a2f; font-weight:600 }
+    .tests-fail { color:#b00020; font-weight:600 }
   </style>
   <!-- ZXing (fallback universel pour iOS/Safari/Android) -->
   <script src="https://unpkg.com/@zxing/library@0.20.0"></script>
@@ -29,40 +36,79 @@
 </head>
 <body>
   <div class="wrap">
-    <h1 style="margin:6px 0 10px;">APW – Test mobile (sans Babel)</h1>
+    <h1 style="margin:6px 0 10px;">APW – Auto-scan & Import numérique</h1>
+
+    <!-- ÉTAT / DIAG -->
     <div class="card">
       <div class="status">
         <div>HTTPS</div><div id="s_https" class="pill">…</div>
         <div>getUserMedia (caméra)</div><div id="s_gum" class="pill">…</div>
         <div>BarcodeDetector natif</div><div id="s_bd" class="pill">…</div>
         <div>ZXing fallback</div><div id="s_zx" class="pill">…</div>
+        <div>FS Access API</div><div id="s_fs" class="pill">…</div>
+        <div>Top-level (pas dans un cadre)</div><div id="s_top" class="pill">…</div>
       </div>
-      <p class="muted" style="margin-top:8px">Si « Caméra » est NON, activez-la dans le navigateur. Si « natif » est NON, le fallback ZXing prendra le relai.</p>
+      <p class="muted" style="margin-top:8px">Caméra et import local fonctionnent 100% en local. iPhone : Safari/Chrome OK (même moteur). Dossier : via sélecteur de fichiers si l’API dossiers n’est pas dispo.</p>
     </div>
 
+    <!-- SCAN PHYSIQUE AUTO -->
     <div class="card">
       <div class="row" style="justify-content:space-between; margin-bottom:8px">
-        <strong>Scanner ISBN</strong>
+        <strong>Scanner (auto) — Livres physiques</strong>
         <span class="pill">ISBN/EAN-13</span>
       </div>
-      <div class="row" style="gap:10px; margin-bottom:10px">
-        <button id="btnStart" class="btn">Démarrer la caméra</button>
-        <button id="btnStop" class="btn alt">Arrêter</button>
-      </div>
       <video id="video" playsinline muted></video>
-      <div class="muted" style="margin-top:6px">Astuce : bonne lumière et rapprocher doucement. Sur iPhone, utilisez Safari ou Chrome (même moteur).</div>
+      <div class="muted" style="margin-top:6px">La détection démarre automatiquement. Bonne lumière & rapproche doucement.</div>
       <div style="margin-top:10px" class="row">
-        <input id="manual" placeholder="Saisie manuelle ISBN/EAN" />
+        <input id="manual" placeholder="Saisie manuelle ISBN/EAN (si besoin)" />
         <button id="btnAdd" class="btn alt">Ajouter</button>
+        <button id="btnStop" class="btn alt">Arrêter</button>
       </div>
     </div>
 
+    <!-- IMPORT NUMÉRIQUE -->
     <div class="card">
-      <strong>File d'attente scannée</strong>
-      <div id="queue" class="list" style="margin-top:8px"></div>
-      <div class="row" style="justify-content:flex-end; margin-top:8px">
-        <button id="btnValidate" class="btn">Valider le lot</button>
+      <strong>Import numérique — Scanner un dossier de PDF/EPUB/MOBI/AZW</strong>
+      <div class="row" style="margin-top:8px">
+        <div style="flex:1 1 220px">
+          <label class="small">Bibliothèque numérique</label>
+          <select id="digitalLoc" style="width:100%">
+            <option value="Kindle">Kindle</option>
+            <option value="Google Drive">Google Drive</option>
+            <option value="OneDrive">OneDrive</option>
+            <option value="Autre">Autre…</option>
+          </select>
+        </div>
+        <input id="digitalLocCustom" class="hidden" placeholder="Nom personnalisé (ex: NAS, Calibre, etc.)" />
       </div>
+      <div class="row" style="margin-top:8px">
+        <button id="btnPickDir" class="btn">Choisir un dossier</button>
+        <label class="btn alt" for="fileInput">Choisir des fichiers (dossier)
+          <input id="fileInput" type="file" webkitdirectory multiple class="hidden" />
+        </label>
+        <button id="btnEnrichISBN" class="btn alt">Enrichir ISBN (numérique)</button>
+      </div>
+      <div id="importLog" class="muted" style="margin-top:6px"></div>
+    </div>
+
+    <!-- LISTES RÉCENTES -->
+    <div class="card">
+      <strong>Derniers ajouts (physiques → « A Ranger »)</strong>
+      <div id="resultsPhysical" class="list" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card">
+      <strong>Derniers imports (numériques)</strong>
+      <div id="resultsDigital" class="list" style="margin-top:8px"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:8px">
+        <button id="btnExport" class="btn">Exporter JSON (démo)</button>
+      </div>
+    </div>
+
+    <!-- TESTS RAPIDES (unitaires) -->
+    <div class="card">
+      <strong>Tests</strong>
+      <ul id="tests" class="small" style="margin-top:8px"></ul>
     </div>
 
     <div class="card">
@@ -71,56 +117,127 @@
     </div>
   </div>
 
-  <script>
-    // ---- util ----
+  <script type="module">
+    // ---------------- Util / État ----------------
+
+    // ---- PWA: manifest + service worker (aucun fichier séparé requis) ----
+    (function setupPWA(){
+      try {
+        const ICON_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" fill="#111"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="280" font-weight="700" fill="#fff">A</text></svg>`)
+        const manifest = { name:'APW – Auto-scan', short_name:'APW', start_url:'.', display:'standalone', background_color:'#ffffff', theme_color:'#111111', icons:[{ src: ICON_SVG, sizes:'any', type:'image/svg+xml', purpose:'any maskable' }] }
+        const blob = new Blob([JSON.stringify(manifest)], { type:'application/json' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('link'); link.rel='manifest'; link.href=url; document.head.appendChild(link)
+        if ('serviceWorker' in navigator) {
+          const swCode = `
+            const CACHE_NAME='apw-cache-v1';
+            self.addEventListener('install',e=>{e.waitUntil((async()=>{try{const c=await caches.open(CACHE_NAME);await c.addAll(['./']);}catch(e){};self.skipWaiting();})())});
+            self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});
+            self.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return;e.respondWith((async()=>{try{const n=await fetch(r);try{const c=await caches.open(CACHE_NAME);c.put(r,n.clone());}catch(e){}return n;}catch(err){const c=await caches.open(CACHE_NAME);const m=await c.match(r);if(m)return m;if(r.mode==='navigate'){return new Response('<!doctype html><html><head><meta charset=\'utf-8\'><title>Hors ligne</title></head><body><h1>Hors ligne</h1><p>Contenu indisponible.</p></body></html>',{headers:{'Content-Type':'text/html; charset=utf-8'}})}throw err;}})())});
+          `
+          const swBlob = new Blob([swCode], { type:'text/javascript' })
+          const swURL = URL.createObjectURL(swBlob)
+          navigator.serviceWorker.register(swURL, { scope: './' }).catch(()=>{})
+        }
+      } catch (e) {}
+    })();
+
     const log = (m)=> { const el=document.getElementById('log'); el.textContent += (m+'\n'); el.scrollTop = el.scrollHeight }
     const setBadge = (id, ok)=> { const el=document.getElementById(id); el.textContent = ok? 'OUI':'NON'; el.className='pill ' + (ok? 'ok':'bad') }
     const normISBN = (raw)=> { const d=String(raw).replace(/[^0-9Xx]/g,'').toUpperCase(); if (d.length===13) return d; if (d.length===10) return isbn10to13(d); return d }
     function isbn10to13(isbn10){ const core='978'+isbn10.slice(0,9); let sum=0; for(let i=0;i<core.length;i++){ sum+= Number(core[i]) * (i%2===0?1:3) } const check=(10-(sum%10))%10; return core+String(check) }
-
-    // ---- état ----
-    let stream = null
-    let rafId = null
-    let detector = null
-    let zxingReader = null
-    const q = [] // { isbn, ts }
-
-    // ---- checks ----
     const isHttps = location.protocol === 'https:' || location.hostname === 'localhost'
     const hasGUM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
     const hasBD = 'BarcodeDetector' in window
     const hasZX = !!(window.ZXing && window.ZXing.BrowserMultiFormatReader)
-    setBadge('s_https', isHttps)
-    setBadge('s_gum', hasGUM)
-    setBadge('s_bd', hasBD)
-    setBadge('s_zx', hasZX)
+    const hasFS = 'showDirectoryPicker' in window
+    const isTop = (window.self === window.top)
+    setBadge('s_https', isHttps); setBadge('s_gum', hasGUM); setBadge('s_bd', hasBD); setBadge('s_zx', hasZX); setBadge('s_fs', hasFS); setBadge('s_top', isTop)
+    if (!hasFS || !isTop) { try { document.getElementById('btnPickDir').classList.add('hidden') } catch {} }
 
-    // ---- UI refs ----
+    // Mini DB locale (démo)
+    function loadDB(){ try{ return JSON.parse(localStorage.getItem('apw_demo_db')||'') }catch{ return null } }
+    function saveDB(db){ localStorage.setItem('apw_demo_db', JSON.stringify(db)); return db }
+    const init = ()=> saveDB(loadDB() || { items: [], inbox: { name:'A Ranger', items: [] } })
+    let DB = init()
+
+    // ---------------- Lookups ----------------
+    async function lookupGoogleBooks(isbn13){
+      const url = `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn13)}`
+      const r = await fetch(url); if (!r.ok) throw new Error('Google Books HTTP ' + r.status)
+      const j = await r.json(); const it = j.items && j.items[0]; if (!it) return null
+      const v = it.volumeInfo || {}
+      return { title: v.title||'', authors: v.authors||[], publisher: v.publisher||'', year: (v.publishedDate||'').slice(0,4)||'', coverUrl: v.imageLinks?.thumbnail || v.imageLinks?.smallThumbnail || '', language: v.language || 'fr', industry: v.industryIdentifiers||[] }
+    }
+    async function lookupOpenLibrary(isbn13){
+      const url = `https://openlibrary.org/isbn/${encodeURIComponent(isbn13)}.json`
+      const r = await fetch(url); if (!r.ok) return null
+      const j = await r.json()
+      return { title: j.title||'', authors: Array.isArray(j.authors)? j.authors.map(a=> (typeof a==='string'? a : (a.name||a.key))).filter(Boolean): [], publisher: Array.isArray(j.publishers)? j.publishers[0] : (j.publisher||''), year: (j.publish_date||'').slice(-4)||'', coverUrl: '', language: 'fr' }
+    }
+    async function lookupBookByISBN(raw){
+      const isbn13 = normISBN(raw)
+      try { const g = await lookupGoogleBooks(isbn13); if (g && g.title) return { source:'google', isbn13, data:g } } catch{}
+      try { const o = await lookupOpenLibrary(isbn13); if (o && o.title) return { source:'openlibrary', isbn13, data:o } } catch{}
+      return { source:'manual', isbn13, data:{ title:'', authors:[], publisher:'', year:'', coverUrl:'', language:'fr' } }
+    }
+
+    // --- Recherche ISBN depuis titre+auteur ---
+    async function searchISBNFromTitleAuthor(title, authors){
+      const a = Array.isArray(authors)? authors[0] : (authors||'')
+      const q = encodeURIComponent(`intitle:${title} inauthor:${a}`.trim())
+      try {
+        const r = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${q}`)
+        if (r.ok){ const j = await r.json(); const v = j.items?.[0]?.volumeInfo; if (v?.industryIdentifiers){
+          let isbn13 = v.industryIdentifiers.find(x=> /13$/.test(x.type))?.identifier || ''
+          let isbn10 = v.industryIdentifiers.find(x=> /10$/.test(x.type))?.identifier || ''
+          return { isbn13: normISBN(isbn13), isbn10: isbn10 }
+        }}
+      } catch {}
+      // Fallback OpenLibrary (search API)
+      try {
+        const rq = `https://openlibrary.org/search.json?title=${encodeURIComponent(title||'')}&author=${encodeURIComponent(a||'')}&limit=1`
+        const rr = await fetch(rq)
+        if (rr.ok){ const jj = await rr.json(); const doc = jj.docs?.[0]; const isbns = doc?.isbn || []
+          const i13 = (isbns.find(x=> String(x).replace(/[^0-9Xx]/g,'').length===13) || '')
+          const i10 = (isbns.find(x=> String(x).replace(/[^0-9Xx]/g,'').length===10) || '')
+          return { isbn13: normISBN(i13), isbn10: i10 }
+        }
+      } catch {}
+      return { isbn13:'', isbn10:'' }
+    }
+
+    // ---------------- Camera + Scan auto (physique) ----------------
+    let stream = null, rafId = null, detector = null, zxingReader = null
     const $video = document.getElementById('video')
-    const $queue = document.getElementById('queue')
-    const $btnStart = document.getElementById('btnStart')
-    const $btnStop = document.getElementById('btnStop')
     const $manual = document.getElementById('manual')
     const $btnAdd = document.getElementById('btnAdd')
-    const $btnValidate = document.getElementById('btnValidate')
+    const $btnStop = document.getElementById('btnStop')
+    const $resultsPhysical = document.getElementById('resultsPhysical')
 
-    function renderQueue(){
-      $queue.innerHTML = ''
-      if (!q.length){ $queue.innerHTML = '<div class="muted">(vide)</div>'; return }
-      q.forEach(item => {
-        const d = document.createElement('div'); d.className='item'; d.textContent = 'ISBN: ' + item.isbn
-        $queue.appendChild(d)
-      })
+    let lastScanTs = 0
+    const SECS_BETWEEN_SAME = 900 // anti-duplication (ms)
+    const seen = new Set()
+
+    function renderPhysical(){
+      $resultsPhysical.innerHTML = ''
+      const items = DB.items.filter(it=> it.kind==='physical')
+      if (!items.length){ $resultsPhysical.innerHTML = '<div class="muted">(aucun livre pour le moment)</div>'; return }
+      for (let i=items.length-1; i>=Math.max(0, items.length-10); i--) {
+        const it = items[i]
+        const el = document.createElement('div')
+        el.className = 'item'
+        el.innerHTML = `
+          <div class="title">${escapeHtml(it.metadata.title || '(Sans titre)')}</div>
+          <div class="small">${(it.metadata.authors||[]).join(', ') || 'Auteur inconnu'} — ${it.metadata.publisher || 'Éditeur ?'} — ${it.metadata.year || ''}</div>
+          <div class="small">ISBN: ${it.identifiers.isbn13 || it.identifiers.isbn10 || ''}</div>
+          <div class="small">Placement: A Ranger</div>
+        `
+        $resultsPhysical.appendChild(el)
+      }
     }
 
-    function onDecoded(code){
-      const isbn = normISBN(code)
-      if (!isbn) return
-      if (q.some(x => x.isbn === isbn)) return // éviter doublons immédiats
-      q.push({ isbn, ts: Date.now() })
-      renderQueue()
-      log('→ Détecté: ' + isbn)
-    }
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])) }
 
     async function startCamera(){
       if (!hasGUM){ log('Caméra non disponible dans ce navigateur.'); return }
@@ -130,63 +247,209 @@
         await $video.play()
         log('Caméra démarrée.')
         if (hasBD){
-          try {
-            detector = new window.BarcodeDetector({ formats:['ean_13'] })
-            loopBD()
-            log('Mode détection: BarcodeDetector natif')
-          } catch (e){ log('BarcodeDetector indisponible → fallback ZXing') ; startZXing() }
-        } else {
-          startZXing()
-        }
+          try { detector = new window.BarcodeDetector({ formats:['ean_13'] }); loopBD(); log('Mode détection: BarcodeDetector natif') }
+          catch (e){ log('BarcodeDetector indisponible → fallback ZXing'); startZXing() }
+        } else { startZXing() }
       } catch (e){ log('Échec accès caméra: ' + e.message) }
     }
 
-    function stopCamera(){
-      if (rafId) cancelAnimationFrame(rafId); rafId = null
-      if (stream){ stream.getTracks().forEach(t=> t.stop()); stream=null }
-      if (zxingReader){ try{ zxingReader.stopContinuousDecode() }catch{}; zxingReader = null }
-      detector = null
-      log('Caméra arrêtée.')
+    function stopCamera(){ if (rafId) cancelAnimationFrame(rafId); rafId = null; if (stream){ stream.getTracks().forEach(t=> t.stop()); stream=null } if (zxingReader){ try{ zxingReader.stopContinuousDecode() }catch{}; zxingReader = null } detector = null; log('Caméra arrêtée.') }
+
+    async function loopBD(){ if (!$video || !detector) return; try { const codes = await detector.detect($video); const code = codes && codes[0] && codes[0].rawValue; if (code) onDecodedPhysical(code) } catch (e){}; rafId = requestAnimationFrame(loopBD) }
+
+    function startZXing(){ if (!hasZX){ log('ZXing non chargé.'); return } try { zxingReader = new ZXing.BrowserMultiFormatReader(); zxingReader.decodeFromVideoDevice(null, 'video', (result, err) => { if (result && result.getText){ onDecodedPhysical(result.getText()) } }) ; log('Mode détection: ZXing (fallback universel)') } catch (e){ log('Erreur ZXing: ' + e.message) } }
+
+    async function onDecodedPhysical(code){
+      const now = Date.now(); if (now - lastScanTs < SECS_BETWEEN_SAME) return; lastScanTs = now
+      const isbn = normISBN(code); if (!isbn) return; if (seen.has(isbn)) return; seen.add(isbn); log('→ Détecté (physique): ' + isbn)
+      const res = await lookupBookByISBN(isbn); const d = res.data || { title:'', authors:[], publisher:'', year:'', coverUrl:'', language:'fr' }
+      const nowISO = new Date().toISOString(); const id = 'item_' + Math.random().toString(36).slice(2,9)
+      const item = { id, kind:'physical', identifiers:{ isbn13:isbn, isbn10:'', ean:isbn }, metadata:{ title:d.title||'', authors: Array.isArray(d.authors)? d.authors: (d.authors? [d.authors]: []), publisher:d.publisher||'', year:Number(d.year)||'', coverUrl:d.coverUrl||'', language:d.language||'fr' }, classification:{ genre:'', collection:'' }, createdAt:nowISO, updatedAt:nowISO, placement:{ type:'inbox' } }
+      DB.items.push(item); DB.inbox.items.push({ itemId:id }); saveDB(DB); renderPhysical(); log('✅ Ajouté (physique) + placé dans "A Ranger"')
     }
 
-    async function loopBD(){
-      if (!$video || !detector) return
+    // ---------------- Import numérique (dossiers/fichiers) ----------------
+    const $digitalLoc = document.getElementById('digitalLoc')
+    const $digitalLocCustom = document.getElementById('digitalLocCustom')
+    const $btnPickDir = document.getElementById('btnPickDir')
+    const $fileInput = document.getElementById('fileInput')
+    const $importLog = document.getElementById('importLog')
+    const $resultsDigital = document.getElementById('resultsDigital')
+    const $btnEnrichISBN = document.getElementById('btnEnrichISBN')
+
+    $digitalLoc.addEventListener('change', ()=>{ $digitalLocCustom.classList.toggle('hidden', $digitalLoc.value !== 'Autre') })
+
+    function chosenDigitalLocation(){ return ($digitalLoc.value === 'Autre' ? ($digitalLocCustom.value || 'Autre') : $digitalLoc.value) }
+
+    function isBookFile(name){ return /\.(epub|pdf|mobi|azw|azw3)$/i.test(name) }
+
+    function cleanBase(name){ return String(name).replace(/\.[^.]+$/,'').replace(/[\._]+/g,' ').replace(/\s+/g,' ').trim() }
+
+    function guessAuthorTitle(filename){
+      let base = cleanBase(filename)
+      base = base.replace(/\[[^\]]+\]/g,'').replace(/\([^\)]+\)/g,'').replace(/\b(ebook|epub|pdf|azw3|mobi|retail|scan|ocr)\b/gi,'').replace(/\s{2,}/g,' ').trim()
+      // Heuristiques courantes: "Auteur - Titre" ou "Titre - Auteur"
+      let author='', title=''
+      if (base.includes(' - ')){
+        const [left, right] = base.split(' - ', 2)
+        // Décide heuristiquement: si right a plus de mots, c'est le titre
+        if ((right.split(' ').length >= left.split(' ').length)) { author = left; title = right }
+        else { title = left; author = right }
+      } else if (base.includes(' — ')){
+        const [left, right] = base.split(' — ', 2); author = left; title = right
+      } else if (base.includes(' , ')){
+        const [left, right] = base.split(' , ', 2); author = left; title = right
+      } else {
+        title = base
+      }
+      author = author.trim(); title = title.trim()
+      // Normalisation: "Nom, Prénom" → "Prénom Nom"
+      if (/^.+,\s.+$/.test(author)) { const [a,b] = author.split(','); author = (b+' '+a).trim() }
+      return { author, title }
+    }
+
+    function renderDigital(){
+      $resultsDigital.innerHTML = ''
+      const items = DB.items.filter(it=> it.kind==='digital')
+      if (!items.length){ $resultsDigital.innerHTML = '<div class="muted">(aucun import numérique pour le moment)</div>'; return }
+      for (let i=items.length-1; i>=Math.max(0, items.length-12); i--) {
+        const it = items[i]
+        const el = document.createElement('div')
+        el.className = 'item'
+        el.innerHTML = `
+          <div class="title">${escapeHtml(it.metadata.title || '(Titre à confirmer)')}</div>
+          <div class="small">${(it.metadata.authors||[]).join(', ') || 'Auteur ?'} — ${it.metadata.publisher || ''} ${it.metadata.year||''}</div>
+          <div class="small">Numérique: ${escapeHtml(it.digital?.location||'?')} — ${escapeHtml(it.digital?.directory||'')}</div>
+          <div class="small">ISBN: ${it.identifiers.isbn13 || it.identifiers.isbn10 || '<em>inconnu</em>'}</div>
+        `
+        $resultsDigital.appendChild(el)
+      }
+    }
+
+    async function importFromDirectoryPicker(){
+      if (!hasFS || !isTop){
+        $importLog.textContent = 'Sélection de dossier indisponible (iframe/iOS). Utilisez « Choisir des fichiers (dossier) ».'
+        try { $fileInput.click() } catch {}
+        return
+      }
       try {
-        const codes = await detector.detect($video)
-        const code = codes && codes[0] && codes[0].rawValue
-        if (code) onDecoded(code)
-      } catch (e){ /* ignore */ }
-      rafId = requestAnimationFrame(loopBD)
+        const dirHandle = await window.showDirectoryPicker()
+        let imported = 0
+        async function walk(handle, prefix=''){
+          for await (const [name, entry] of handle.entries()){
+            const path = prefix ? (prefix + '/' + name) : name
+            if (entry.kind === 'file'){
+              if (!isBookFile(name)) continue
+              const file = await entry.getFile()
+              addDigitalItemFromFile(file, path)
+              imported++
+            } else if (entry.kind === 'directory'){
+              await walk(entry, path)
+            }
+          }
+        }
+        await walk(dirHandle, '')
+        saveDB(DB); renderDigital(); $importLog.textContent = `Import terminé: ${imported} fichiers.`; log(`Import dossier: ${imported} fichiers`)
+      } catch (e){
+        const msg = String(e && (e.message||e))
+        if (/Cross origin sub frames/i.test(msg)){
+          $importLog.textContent = 'Ce site s\'ouvre dans un cadre (iframe) : le sélecteur de dossiers est bloqué. Utilisez « Choisir des fichiers (dossier) » ou ouvrez l\'app en plein écran (lien direct).'
+          try { $fileInput.click() } catch {}
+        } else {
+          log('Import annulé ou erreur: ' + msg)
+        }
+      }
     }
 
-    function startZXing(){
-      if (!hasZX){ log('ZXing non chargé.'); return }
-      try {
-        zxingReader = new ZXing.BrowserMultiFormatReader()
-        zxingReader.decodeFromVideoDevice(null, 'video', (result, err) => {
-          if (result && result.getText){ onDecoded(result.getText()) }
-        })
-        log('Mode détection: ZXing (fallback universel)')
-      } catch (e){ log('Erreur ZXing: ' + e.message) }
+    function addDigitalItemFromFile(file, relPath){
+      const { author, title } = guessAuthorTitle(file.name)
+      const location = chosenDigitalLocation()
+      const directory = (relPath || file.webkitRelativePath || '').split('/').slice(0, -1).join('/')
+      const nowISO = new Date().toISOString()
+      const id = 'item_' + Math.random().toString(36).slice(2,9)
+      const item = {
+        id,
+        kind: 'digital',
+        identifiers: { isbn13:'', isbn10:'', ean:'' },
+        metadata: { title, authors: author? [author]: [], publisher:'', year:'', coverUrl:'', language:'fr' },
+        digital: { location, directory, path: relPath || file.name },
+        classification: { genre:'', collection:'' },
+        createdAt: nowISO, updatedAt: nowISO,
+        placement: { type:'digital', location }
+      }
+      DB.items.push(item)
     }
 
-    // ---- actions ----
-    $btnStart.addEventListener('click', startCamera)
-    $btnStop.addEventListener('click', stopCamera)
-    $btnAdd.addEventListener('click', ()=> { const v = normISBN($manual.value); if (!v){ alert('ISBN invalide'); return } onDecoded(v); $manual.value='' })
-    $btnValidate.addEventListener('click', ()=> {
-      if (!q.length){ alert('Rien à valider'); return }
-      const stored = JSON.parse(localStorage.getItem('apw_scan_demo')||'[]')
-      stored.push(...q)
-      localStorage.setItem('apw_scan_demo', JSON.stringify(stored))
-      q.length = 0
-      renderQueue()
-      alert('Lot validé (stocké localement).')
-    })
+    async function importFromFileInput(files){
+      if (!files || !files.length){ $importLog.textContent = 'Aucun fichier.'; return }
+      let imported = 0
+      for (const f of files){ if (!isBookFile(f.name)) continue; addDigitalItemFromFile(f, f.webkitRelativePath || f.name); imported++ }
+      saveDB(DB); renderDigital(); $importLog.textContent = `Import terminé: ${imported} fichiers.`; log(`Import fichiers: ${imported} fichiers`)
+    }
 
-    // init
-    renderQueue()
+    async function enrichISBNForDigital(){
+      const targets = DB.items.filter(it=> it.kind==='digital' && !it.identifiers.isbn13)
+      if (!targets.length){ $importLog.textContent = 'Aucun livre numérique à enrichir.'; return }
+      let updated = 0
+      for (const it of targets){
+        const res = await searchISBNFromTitleAuthor(it.metadata.title||'', it.metadata.authors||[])
+        if (res.isbn13 || res.isbn10){ it.identifiers.isbn13 = res.isbn13 || ''; it.identifiers.isbn10 = res.isbn10 || it.identifiers.isbn10 || ''; updated++ }
+      }
+      saveDB(DB); renderDigital(); $importLog.textContent = `Enrichissement terminé: ${updated} fiches mises à jour.`; log(`Enrichissement ISBN: ${updated} MAJ`)
+    }
+
+    // ---------------- Tests unitaires simples ----------------
+    function runTests(){
+      const ul = document.getElementById('tests')
+      const add = (ok, label)=>{
+        const li = document.createElement('li')
+        li.className = ok? 'tests-pass' : 'tests-fail'
+        li.textContent = (ok? '✓':'✗') + ' ' + label
+        ul.appendChild(li)
+      }
+      // Test 1: isbn10 → isbn13
+      try { const out = isbn10to13('0306406152'); add(out === '9780306406157', `isbn10to13('0306406152') → ${out}`) } catch(e){ add(false, 'isbn10to13 exception') }
+      // Test 2: normalisation (tirerets/espaces)
+      try { const out = normISBN('978-0-306-40615-7'); add(out === '9780306406157', `normISBN hyphens → ${out}`) } catch(e){ add(false, 'normISBN exception') }
+      // Test 3: guessAuthorTitle (Auteur - Titre)
+      try { const r = guessAuthorTitle('Hugo - Les Misérables.epub'); add(r.author==='Hugo' && r.title==='Les Misérables', `guessAuthorTitle(Hugo - Les Misérables) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #1 exception') }
+      // Test 4: guessAuthorTitle (Titre - Auteur)
+      try { const r = guessAuthorTitle('Les Misérables - Victor Hugo.pdf'); add(r.author==='Victor Hugo' || r.title==='Les Misérables', `guessAuthorTitle(Les Misérables - Victor Hugo) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #2 exception') }
+      // Test 5: guessAuthorTitle (Nom, Prénom)
+      try { const r = guessAuthorTitle('Dumas, Alexandre - Le Comte de Monte-Cristo.pdf'); add(r.author==='Alexandre Dumas' && /Monte-Cristo/.test(r.title), `guessAuthorTitle(Dumas, Alexandre - Le Comte de Monte-Cristo) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #3 exception') }
+      // Test 6: normISBN invalide → chaîne vide
+      try { const out = normISBN('abc'); add(out === '', `normISBN('abc') → '${out}'`) } catch(e){ add(false, 'normISBN invalid exception') }
+      // Test 7: nettoyage de nom de fichier avec underscores et tags
+      try { const r = guessAuthorTitle('Asimov_Foundation_[retail].epub'); add(r.title.includes('Asimov') && r.author==='', `guessAuthorTitle('Asimov_Foundation_[retail].epub') → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #4 exception') }
+      // Test 8: tiret long (—)
+      try { const r = guessAuthorTitle('Pratchett — Mort.azw3'); add(r.author==='Pratchett' && r.title==='Mort', `guessAuthorTitle('Pratchett — Mort.azw3') → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #5 exception') }
+    }
+      // Test 1: isbn10 → isbn13
+      try { const out = isbn10to13('0306406152'); add(out === '9780306406157', `isbn10to13('0306406152') → ${out}`) } catch(e){ add(false, 'isbn10to13 exception') }
+      // Test 2: normalisation (tirerets/espaces)
+      try { const out = normISBN('978-0-306-40615-7'); add(out === '9780306406157', `normISBN hyphens → ${out}`) } catch(e){ add(false, 'normISBN exception') }
+      // Test 3: guessAuthorTitle (Auteur - Titre)
+      try { const r = guessAuthorTitle('Hugo - Les Misérables.epub'); add(r.author==='Hugo' && r.title==='Les Misérables', `guessAuthorTitle(Hugo - Les Misérables) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #1 exception') }
+      // Test 4: guessAuthorTitle (Titre - Auteur)
+      try { const r = guessAuthorTitle('Les Misérables - Victor Hugo.pdf'); add(r.author==='Victor Hugo' || r.title==='Les Misérables', `guessAuthorTitle(Les Misérables - Victor Hugo) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #2 exception') }
+      // Test 5: guessAuthorTitle (Nom, Prénom)
+      try { const r = guessAuthorTitle('Dumas, Alexandre - Le Comte de Monte-Cristo.pdf'); add(r.author==='Alexandre Dumas' && /Monte-Cristo/.test(r.title), `guessAuthorTitle(Dumas, Alexandre - Le Comte de Monte-Cristo) → ${r.author} / ${r.title}`) } catch(e){ add(false, 'guessAuthorTitle #3 exception') }
+    }
+
+    // ---------------- Actions ----------------
+    document.getElementById('btnAdd').addEventListener('click', ()=>{ const v = normISBN($manual.value); if (!v){ alert('ISBN invalide'); return } onDecodedPhysical(v); $manual.value='' })
+    document.getElementById('btnStop').addEventListener('click', stopCamera)
+    document.getElementById('video').addEventListener('click', ()=>{ if (!stream) startCamera() })
+    document.getElementById('btnExport').addEventListener('click', ()=>{ const blob = new Blob([JSON.stringify(DB, null, 2)], { type:'application/json' }); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='apw_demo_export.json'; a.click(); URL.revokeObjectURL(url) })
+
+    $btnPickDir.addEventListener('click', importFromDirectoryPicker)
+    document.getElementById('fileInput').addEventListener('change', (e)=> importFromFileInput(e.target.files))
+    $btnEnrichISBN.addEventListener('click', enrichISBNForDigital)
+
+    // Auto-démarrage
+    window.addEventListener('load', ()=>{ if (isHttps) startCamera(); renderPhysical(); renderDigital(); runTests() })
   </script>
 </body>
 </html>
+
 
